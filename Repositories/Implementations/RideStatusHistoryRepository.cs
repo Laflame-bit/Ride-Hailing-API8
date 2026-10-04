@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+using Dapper;
 using RideHailingAPI.Data;
 using RideHailingAPI.Domain.Entities;
 using RideHailingAPI.Repositories.Interfaces;
@@ -7,26 +7,65 @@ namespace RideHailingAPI.Repositories.Implementations;
 
 public class RideStatusHistoryRepository : IRideStatusHistoryRepository
 {
-    private readonly AppDbContext _context;
+    private readonly DapperContext _context;
 
-    public RideStatusHistoryRepository(AppDbContext context)
+    public RideStatusHistoryRepository(DapperContext context)
     {
         _context = context;
     }
-    
+
     public async Task<List<RideStatusHistory>> GetByRideIdAsync(int rideId)
     {
-        return await _context.RideStatusHistories
-            .Where(h => h.RideId == rideId)
-            .OrderBy(h => h.CreatedAt)
-            .ToListAsync();
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+                           SELECT *
+                           FROM RideStatusHistories
+                           WHERE RideId = @RideId
+                           ORDER BY CreatedAt
+                           """;
+
+        var history = await connection.QueryAsync<RideStatusHistory>(
+            sql,
+            new { RideId = rideId }
+        );
+
+        return history.ToList();
     }
 
     public async Task<RideStatusHistory> AddAsync(RideStatusHistory history)
     {
-        await _context.RideStatusHistories.AddAsync(history);
-        await _context.SaveChangesAsync();
+        using var connection = _context.CreateConnection();
 
-        return history;
+        const string sql = """
+                           INSERT INTO RideStatusHistories
+                           (
+                               RideId,
+                               Status,
+                               ChangedByUserId,
+                               CreatedAt
+                           )
+                           OUTPUT INSERTED.*
+                           VALUES
+                           (
+                               @RideId,
+                               @Status,
+                               @ChangedByUserId,
+                               @CreatedAt
+                           )
+                           """;
+
+        var parameters = new
+        {
+            history.RideId,
+            Status = history.Status.ToString(),
+            history.ChangedByUserId,
+            history.CreatedAt
+        };
+
+        return await connection.QuerySingleAsync<RideStatusHistory>(
+            sql,
+            parameters
+        );
     }
 }

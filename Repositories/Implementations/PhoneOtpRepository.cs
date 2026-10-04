@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+using Dapper;
 using RideHailingAPI.Data;
 using RideHailingAPI.Domain.Entities;
 using RideHailingAPI.Repositories.Interfaces;
@@ -7,56 +7,115 @@ namespace RideHailingAPI.Repositories.Implementations;
 
 public class PhoneOtpRepository : IPhoneOtpRepository
 {
-    private readonly AppDbContext _context;
+    private readonly DapperContext _context;
 
-    public PhoneOtpRepository(AppDbContext context)
+    public PhoneOtpRepository(DapperContext context)
     {
         _context = context;
     }
-    
+
     public async Task<PhoneOtp?> GetValidOtpAsync(int userId, string otpCode)
     {
-        return await _context.PhoneOtps
-            .FirstOrDefaultAsync(o =>
-                o.UserId == userId &&
-                o.OtpCode == otpCode &&
-                !o.IsUsed &&
-                o.ExpiresAt > DateTime.UtcNow);
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            SELECT *
+            FROM PhoneOtps
+            WHERE UserId = @UserId
+              AND OtpCode = @OtpCode
+              AND IsUsed = 0
+              AND ExpiresAt > @Now
+            """;
+
+        return await connection.QueryFirstOrDefaultAsync<PhoneOtp>(
+            sql,
+            new
+            {
+                UserId = userId,
+                OtpCode = otpCode,
+                Now = DateTime.UtcNow
+            }
+        );
     }
 
     public async Task<PhoneOtp?> GetLatestAsync(int userId)
     {
-        return await _context.PhoneOtps
-            .Where(o => o.UserId == userId)
-            .OrderByDescending(o => o.CreatedAt)
-            .FirstOrDefaultAsync();
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            SELECT TOP 1 *
+            FROM PhoneOtps
+            WHERE UserId = @UserId
+            ORDER BY CreatedAt DESC
+            """;
+
+        return await connection.QueryFirstOrDefaultAsync<PhoneOtp>(
+            sql,
+            new { UserId = userId }
+        );
     }
 
     public async Task<PhoneOtp> AddAsync(PhoneOtp otp)
     {
-        await _context.PhoneOtps.AddAsync(otp);
-        await _context.SaveChangesAsync();
+        using var connection = _context.CreateConnection();
 
-        return otp;
+        const string sql = """
+            INSERT INTO PhoneOtps
+            (
+                UserId,
+                OtpCode,
+                ExpiresAt,
+                IsUsed,
+                CreatedAt
+            )
+            OUTPUT INSERTED.*
+            VALUES
+            (
+                @UserId,
+                @OtpCode,
+                @ExpiresAt,
+                @IsUsed,
+                @CreatedAt
+            )
+            """;
+
+        return await connection.QuerySingleAsync<PhoneOtp>(
+            sql,
+            otp
+        );
     }
 
     public async Task UpdateAsync(PhoneOtp otp)
     {
-        _context.PhoneOtps.Update(otp);
-        await _context.SaveChangesAsync();
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            UPDATE PhoneOtps
+            SET
+                UserId = @UserId,
+                OtpCode = @OtpCode,
+                ExpiresAt = @ExpiresAt,
+                IsUsed = @IsUsed
+            WHERE Id = @Id
+            """;
+
+        await connection.ExecuteAsync(sql, otp);
     }
 
     public async Task InvalidateAllAsync(int userId)
     {
-        var otps = await _context.PhoneOtps
-            .Where(x => x.UserId == userId && !x.IsUsed)
-            .ToListAsync();
+        using var connection = _context.CreateConnection();
 
-        foreach (var otp in otps)
-        {
-            otp.IsUsed = true;
-        }
+        const string sql = """
+            UPDATE PhoneOtps
+            SET IsUsed = 1
+            WHERE UserId = @UserId
+              AND IsUsed = 0
+            """;
 
-        await _context.SaveChangesAsync();
+        await connection.ExecuteAsync(
+            sql,
+            new { UserId = userId }
+        );
     }
 }

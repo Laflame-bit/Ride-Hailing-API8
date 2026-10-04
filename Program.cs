@@ -1,9 +1,10 @@
 using System.Text;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using RideHailingAPI.Data;
+using RideHailingAPI.Domain.Entities;
+
 using RideHailingAPI.Repositories.Implementations;
 using RideHailingAPI.Repositories.Interfaces;
 using RideHailingAPI.Services.Implementations;
@@ -13,7 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddControllers();
-
+builder.Services.AddScoped<DapperContext>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -46,10 +47,7 @@ builder.Services.AddSwaggerGen(options =>
         });
 });
 
-// Configure SQL Server database
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+
 
 // Register repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -96,12 +94,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.Configure<SmtpMail>(
+    builder.Configuration.GetSection("Smtp"));
+
+
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider
-        .GetRequiredService<AppDbContext>();
+        .GetRequiredService<DapperContext>();
 
     await DbSeeder.SeedAdminAsync(context);
 }

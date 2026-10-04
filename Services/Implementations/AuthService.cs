@@ -78,7 +78,7 @@ public class AuthService  : IAuthService
             IsActive = true
         };
 
-        await _userRepository.AddAsync(user);
+        user = await _userRepository.AddAsync(user);
 
         var emailOtp = new EmailOtp
         {

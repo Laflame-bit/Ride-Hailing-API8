@@ -1,54 +1,131 @@
-using Microsoft.EntityFrameworkCore;
+using Dapper;
 using RideHailingAPI.Data;
 using RideHailingAPI.Domain.Entities;
 using RideHailingAPI.Repositories.Interfaces;
 
 namespace RideHailingAPI.Repositories.Implementations;
 
-public class UserRepository  : IUserRepository
+public class UserRepository : IUserRepository
 {
-    private readonly AppDbContext _context;
+    private readonly DapperContext _context;
 
-    public UserRepository(AppDbContext context)
+    public UserRepository(DapperContext context)
     {
         _context = context;
     }
-    
+
     public async Task<User?> GetByIdAsync(int id)
     {
-        return await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == id);
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            SELECT *
+            FROM Users
+            WHERE Id = @Id
+            """;
+
+        return await connection.QueryFirstOrDefaultAsync<User>(
+            sql,
+            new { Id = id });
     }
 
     public async Task<User?> GetByEmailAsync(string email)
     {
-        return await _context.Users
-            .FirstOrDefaultAsync(u => u.Email == email);
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            SELECT *
+            FROM Users
+            WHERE Email = @Email
+            """;
+
+        return await connection.QueryFirstOrDefaultAsync<User>(
+            sql,
+            new { Email = email });
     }
 
     public async Task<User?> GetByPhoneNumberAsync(string phoneNumber)
     {
-        return await _context.Users
-            .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber);
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            SELECT *
+            FROM Users
+            WHERE PhoneNumber = @PhoneNumber
+            """;
+
+        return await connection.QueryFirstOrDefaultAsync<User>(
+            sql,
+            new { PhoneNumber = phoneNumber });
     }
 
     public async Task<List<User>> GetAllAsync()
     {
-        return await _context.Users
-            .ToListAsync();
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+                           SELECT *
+                           FROM Users
+                           """;
+
+        var users = await connection.QueryAsync<User>(sql);
+
+        return users.ToList();
     }
 
     public async Task<User> AddAsync(User user)
     {
-        await _context.Users.AddAsync(user);
-        await _context.SaveChangesAsync();
+        using var connection = _context.CreateConnection();
 
-        return user;
+        const string sql = """
+            INSERT INTO Users
+            (
+                FullName,
+                Email,
+                PhoneNumber,
+                PasswordHash,
+                Role,
+                IsEmailVerified,
+                IsPhoneVerified,
+                IsActive,
+                CreatedAt
+            )
+            OUTPUT INSERTED.*
+            VALUES
+            (
+                @FullName,
+                @Email,
+                @PhoneNumber,
+                @PasswordHash,
+                @Role,
+                @IsEmailVerified,
+                @IsPhoneVerified,
+                @IsActive,
+                @CreatedAt
+            )
+            """;
+
+        return await connection.QuerySingleAsync<User>(sql, user);
     }
 
     public async Task UpdateAsync(User user)
     {
-        _context.Users.Update(user);
-        await _context.SaveChangesAsync();
+        using var connection = _context.CreateConnection();
+
+        const string sql = """
+            UPDATE Users
+            SET
+                FullName = @FullName,
+                Email = @Email,
+                PhoneNumber = @PhoneNumber,
+                PasswordHash = @PasswordHash,
+                Role = @Role,
+                IsEmailVerified = @IsEmailVerified,
+                IsPhoneVerified = @IsPhoneVerified,
+                IsActive = @IsActive
+            WHERE Id = @Id
+            """;
+
+        await connection.ExecuteAsync(sql, user);
     }
 }
